@@ -424,59 +424,59 @@ class ChessBoardDetector(QMainWindow):
             self.cap.release()
         event.accept()
 
-class Chessgame(threading.Thread):
-    def __init__(self, board_state_ref, sizesquare = 80):
-        super().__init__()
-        self.board_state_ref = board_state_ref
-        self.sizesquare = sizesquare
-        self.running = True
-        self.width = 8 * sizesquare
-        self.height = 8 * sizesquare
-        self.labelscolumn = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
-        self.labelsrow = ['8', '7', '6', '5', '4', '3', '2', '1']
+# class Chessgame(threading.Thread):
+#     def __init__(self, board_state_ref, sizesquare = 80):
+#         super().__init__()
+#         self.board_state_ref = board_state_ref
+#         self.sizesquare = sizesquare
+#         self.running = True
+#         self.width = 8 * sizesquare
+#         self.height = 8 * sizesquare
+#         self.labelscolumn = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+#         self.labelsrow = ['8', '7', '6', '5', '4', '3', '2', '1']
         
-        pygame.init()
-        self.screen = pygame.display.set_mode((self.width, self.height))
-        pygame.display.set_caption("Chess Board Viewer")
-        self.font = pygame.font.SysFont("Arial", 16)
+#         pygame.init()
+#         self.screen = pygame.display.set_mode((self.width, self.height))
+#         pygame.display.set_caption("Chess Board Viewer")
+#         self.font = pygame.font.SysFont("Arial", 16)
 
-    def draw_board(self):
-        colors = [(240, 217, 181), (181, 136, 99)]
-        for row in range(8):
-            for col in range(8):
-                square_color = colors[(row + col) % 2]
-                rect = pygame.Rect(col * self.sizesquare, row * self.sizesquare, self.sizesquare, self.sizesquare)
-                pygame.draw.rect(self.screen, square_color, rect)
+#     def draw_board(self):
+#         colors = [(240, 217, 181), (181, 136, 99)]
+#         for row in range(8):
+#             for col in range(8):
+#                 square_color = colors[(row + col) % 2]
+#                 rect = pygame.Rect(col * self.sizesquare, row * self.sizesquare, self.sizesquare, self.sizesquare)
+#                 pygame.draw.rect(self.screen, square_color, rect)
 
-                coord = self.labelscolumn[col] + self.labelsrow[row]
-                piece = self.board_state_ref.get(coord, "")
-                if piece and piece != "unknown":
-                    # Draw text
-                    text_surface = self.font.render(piece.replace("white_", "W_").replace("black_", "B_"), True, (0, 0, 0))
-                    text_rect = text_surface.get_rect(center=rect.center)
-                    self.screen.blit(text_surface, text_rect)
+#                 coord = self.labelscolumn[col] + self.labelsrow[row]
+#                 piece = self.board_state_ref.get(coord, "")
+#                 if piece and piece != "unknown":
+#                     # Draw text
+#                     text_surface = self.font.render(piece.replace("white_", "W_").replace("black_", "B_"), True, (0, 0, 0))
+#                     text_rect = text_surface.get_rect(center=rect.center)
+#                     self.screen.blit(text_surface, text_rect)
 
-    def run(self):
-        clock = pygame.time.Clock()
-        while self.running:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self.running = False
+#     def run(self):
+#         clock = pygame.time.Clock()
+#         while self.running:
+#             for event in pygame.event.get():
+#                 if event.type == pygame.QUIT:
+#                     self.running = False
 
-            self.screen.fill((0, 0, 0))
-            self.draw_board()
-            pygame.display.flip()
-            clock.tick(10)  # Limit to 10 FPS
+#             self.screen.fill((0, 0, 0))
+#             self.draw_board()
+#             pygame.display.flip()
+#             clock.tick(10)  # Limit to 10 FPS
 
-        pygame.quit()
+#         pygame.quit()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = ChessBoardDetector()
     window.show()
-    gamechess = Chessgame(window.board_state)
-    gamechess.start()
+    # gamechess = Chessgame(window.board_state)
+    # gamechess.start()
 
     sys.exit(app.exec_())
-    gamechess.running = False
-    gamechess.join()
+    # gamechess.running = False
+    # gamechess.join()

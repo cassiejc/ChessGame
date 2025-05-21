@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import pygame
 import threading
+import copy
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QComboBox
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtCore import Qt, QTimer
@@ -15,8 +16,11 @@ class ChessBoardDetector(QMainWindow):
         self.setWindowTitle("Pendeteksi Papan Catur")
         self.setGeometry(100, 100, 1200, 800)
 
-        #Dictionary Posisi Pion
+        # Dictionary Posisi Pion
         self.board_state = self.init_board()
+        # Menyimpan state sebelumnya untuk pendeteksian gerakan
+        self.previous_board_state = {}
+        self.move_history = []
         
         # Widget utama dan layout
         central_widget = QWidget()
@@ -63,6 +67,10 @@ class ChessBoardDetector(QMainWindow):
         self.status_label = QLabel("Status: Kamera tidak aktif")
         right_layout.addWidget(self.status_label)
         
+        # Label untuk gerakan terdeteksi
+        self.move_label = QLabel("Gerakan Terdeteksi: -")
+        right_layout.addWidget(self.move_label)
+        
         # Menggabungkan layout
         main_layout.addLayout(left_layout)
         main_layout.addLayout(right_layout)
@@ -80,7 +88,11 @@ class ChessBoardDetector(QMainWindow):
         self.chessboard_corners = None
         self.square_size = 50  # Ukuran default kotak papan catur
         self.board_detected = False
-
+        
+        # Variabel untuk deteksi pergerakan
+        self.last_detected_pieces = {}
+        self.move_detected = False
+        self.move_counter = 0
         
     def init_board(self):
         board = {}
@@ -147,6 +159,14 @@ class ChessBoardDetector(QMainWindow):
             if ret:
                 self.detect_chessboard(frame, show_result=True)
                 self.status_label.setText("Status: Frame diambil untuk analisis")
+                
+                # Simpan state papan saat ini untuk pendeteksian gerakan
+                if not self.previous_board_state:
+                    self.previous_board_state = copy.deepcopy(self.board_state)
+                    self.status_label.setText("Status: State awal papan disimpan")
+                else:
+                    # Deteksi pergerakan dengan membandingkan dengan state sebelumnya
+                    self.detect_move()
     
     def detect_chessboard(self, frame, show_result=False):
         # Konversi ke grayscale untuk deteksi
@@ -306,14 +326,6 @@ class ChessBoardDetector(QMainWindow):
         
         return result
     
-    # def move_piece(self, old_pos, new_pos):
-    #     piece = self.board_state.get(old_pos)
-    #     if piece:
-    #         self.board_state[new_pos] = piece
-    #         del self.board_state[old_pos]
-    #     else:
-    #         self.board_state[new_pos] = "unknown"
-            
     def detect_pieces(self, gray, img, corners):
         if len(corners) != 49:  # 7x7 titik pertemuan
             return img
@@ -377,6 +389,9 @@ class ChessBoardDetector(QMainWindow):
         column_labels = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
         row_labels = ['8', '7', '6', '5', '4', '3', '2', '1']
         
+        # Simpan state terdeteksi saat ini untuk perbandingan nanti
+        current_detected_pieces = {}
+        
         for i in range(8):
             for j in range(8):
                 center = tuple(square_centers[i][j].astype(int))
@@ -394,7 +409,6 @@ class ChessBoardDetector(QMainWindow):
                 roi = gray[y1:y2, x1:x2]
                 
                 # Deteksi bidak dengan memeriksa standar deviasi atau metode lain
-                # Metode ini sederhana tetapi bisa diganti dengan deteksi objek lebih canggih
                 if roi.size > 0:
                     std_dev = np.std(roi)
                     mean_intensity = np.mean(roi)
@@ -403,20 +417,81 @@ class ChessBoardDetector(QMainWindow):
                     # Dan jika intensitas rata-rata berbeda dari sekitarnya
                     piece_detected = std_dev > 25  # Nilai threshold dapat disesuaikan
                     
+                    coord_text = column_labels[j] + row_labels[i]
+                    
                     if piece_detected:
-                        # Tandai kotak dengan bidak
-                        coord_text = column_labels[j] + row_labels[i]
-                        piece_type = self.board_state.get(coord_text,"unknown") # Mark Detected piece
-                        self.board_state[coord_text] = piece_type
+                        # Tambahkan ke daftar bidak terdeteksi
+                        current_detected_pieces[coord_text] = True
+                        
+                        # Ambil tipe bidak dari state papan
+                        piece_type = self.board_state.get(coord_text, "unknown")
+                        
                         # Gambar lingkaran merah pada pusat kotak
                         cv2.circle(result_img, center, radius, (0, 0, 255), 2)
                         
                         # Label teks untuk kotak dengan objek
-                        cv2.putText(result_img, f"{coord_text}: {piece_type}*", 
-                                   (center[0] - 40, center[1] + 5),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                        cv2.putText(result_img, f"{coord_text}: {piece_type}", 
+                                  (center[0] - 40, center[1] + 5),
+                                  cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                    else:
+                        # Kotak kosong
+                        current_detected_pieces[coord_text] = False
+        
+        # Simpan untuk pendeteksian gerakan
+        self.last_detected_pieces = current_detected_pieces
         
         return result_img
+    
+    def detect_move(self):
+        """Deteksi pergerakan bidak dengan membandingkan state papan sebelum dan sesudah."""
+        moved_from = []
+        moved_to = []
+        
+        # Mencari kotak yang sebelumnya ada bidak dan sekarang kosong (moved_from)
+        for coord in self.previous_board_state:
+            if coord in self.board_state:
+                # Jika kotak ini dulunya berisi bidak tetapi sekarang terdeteksi kosong
+                if coord not in self.last_detected_pieces or not self.last_detected_pieces[coord]:
+                    moved_from.append(coord)
+        
+        # Mencari kotak yang sebelumnya kosong dan sekarang ada bidak (moved_to)
+        for coord in self.last_detected_pieces:
+            if self.last_detected_pieces[coord]:  # Jika ada bidak terdeteksi di kotak ini
+                # Jika kotak ini sebelumnya tidak ada dalam state atau tidak terdeteksi
+                if coord not in self.previous_board_state or coord in moved_from:
+                    moved_to.append(coord)
+        
+        # Validasi gerakan yang valid
+        if len(moved_from) == 1 and len(moved_to) == 1:
+            from_coord = moved_from[0]
+            to_coord = moved_to[0]
+            
+            # Ambil tipe bidak yang bergerak
+            piece_type = self.previous_board_state.get(from_coord, "unknown")
+            
+            # Update board state
+            self.board_state[to_coord] = piece_type
+            # Kotak asal sekarang kosong
+            if from_coord in self.board_state:
+                del self.board_state[from_coord]
+            
+            # Tampilkan gerakan yang terdeteksi
+            move_text = f"Gerakan {self.move_counter + 1}: {piece_type} dari {from_coord} ke {to_coord}"
+            self.move_label.setText(move_text)
+            self.move_history.append(move_text)
+            self.move_counter += 1
+            
+            # Update state untuk gerakan selanjutnya
+            self.previous_board_state = copy.deepcopy(self.board_state)
+            
+            return True
+        
+        # Jika lebih dari satu bidak yang bergerak atau tidak ada gerakan yang valid
+        elif len(moved_from) > 0 or len(moved_to) > 0:
+            move_text = f"Gerakan tidak valid: dari {moved_from} ke {moved_to}"
+            self.move_label.setText(move_text)
+            
+        return False
         
     def closeEvent(self, event):
         # Pastikan sumber daya dibebaskan saat menutup aplikasi
@@ -424,14 +499,16 @@ class ChessBoardDetector(QMainWindow):
             self.cap.release()
         event.accept()
 
+
 class Chessgame(threading.Thread):
-    def __init__(self, board_state_ref, sizesquare = 80):
+    def __init__(self, board_state_ref, move_history_ref, sizesquare = 80):
         super().__init__()
         self.board_state_ref = board_state_ref
+        self.move_history_ref = move_history_ref
         self.sizesquare = sizesquare
         self.running = True
         self.width = 8 * sizesquare
-        self.height = 8 * sizesquare
+        self.height = 8 * sizesquare + 100  # Extra space for move history
         self.labelscolumn = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
         self.labelsrow = ['8', '7', '6', '5', '4', '3', '2', '1']
         
@@ -439,6 +516,7 @@ class Chessgame(threading.Thread):
         self.screen = pygame.display.set_mode((self.width, self.height))
         pygame.display.set_caption("Chess Board Viewer")
         self.font = pygame.font.SysFont("Arial", 16)
+        self.move_font = pygame.font.SysFont("Arial", 14)
 
     def draw_board(self):
         colors = [(240, 217, 181), (181, 136, 99)]
@@ -455,6 +533,16 @@ class Chessgame(threading.Thread):
                     text_surface = self.font.render(piece.replace("white_", "W_").replace("black_", "B_"), True, (0, 0, 0))
                     text_rect = text_surface.get_rect(center=rect.center)
                     self.screen.blit(text_surface, text_rect)
+        
+        # Draw move history
+        history_rect = pygame.Rect(0, 8 * self.sizesquare, self.width, 100)
+        pygame.draw.rect(self.screen, (200, 200, 200), history_rect)
+        
+        # Display last 5 moves
+        y_offset = 8 * self.sizesquare + 10
+        for i, move in enumerate(self.move_history_ref[-5:]):
+            move_text = self.move_font.render(move, True, (0, 0, 0))
+            self.screen.blit(move_text, (10, y_offset + i * 18))
 
     def run(self):
         clock = pygame.time.Clock()
@@ -470,13 +558,14 @@ class Chessgame(threading.Thread):
 
         pygame.quit()
 
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = ChessBoardDetector()
     window.show()
-    gamechess = Chessgame(window.board_state)
-    gamechess.start()
+    # gamechess = Chessgame(window.board_state, window.move_history)
+    # gamechess.start()
 
     sys.exit(app.exec_())
-    gamechess.running = False
-    gamechess.join()
+    # gamechess.running = False
+    # gamechess.join()
